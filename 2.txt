@@ -1,0 +1,771 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+using Microsoft.Win32;
+using System.Windows.Forms;
+using System.Diagnostics;
+using System.Management;
+using Microsoft.VisualBasic.Devices;
+
+namespace MY_CLEANER
+{
+    
+    public partial class Form1 : Form
+    {
+
+        private Timer fadeTimer;
+        private bool fadeIn;
+        private Timer slideTimer;
+
+        private PerformanceCounter cpuCounter;
+        private PerformanceCounter ramCounter;
+
+        // Declare variables for FPS calculation
+        private Timer fpsTimer;
+        private int frameCount;
+        private DateTime lastTime;
+        private DateTime lastFrameTime;
+
+        private string selectedAppPath = string.Empty; // To store the selected app path
+
+        // Store predefined apps and their paths
+        private Dictionary<string, string> predefinedApps;
+
+        public Form1()
+        {
+            InitializeComponent();
+            InitializeTimers();
+            InitializePredefinedApps();
+
+            this.Opacity = 0; // Start with fully transparent
+            fadeIn = true;
+
+            // Initialize the timer
+            fadeTimer = new Timer();
+            fadeTimer.Interval = 40; // Adjust the speed of fading
+            fadeTimer.Tick += FadeTimer_Tick;
+            fadeTimer.Start();
+
+            // Initialize CPU counter
+            cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+
+            // Initialize Memory counter
+            ramCounter = new PerformanceCounter("Memory", "Available MBytes");
+
+            lastFrameTime = DateTime.Now;
+            frameCount = 0;
+
+            // Subscribe to Application.Idle for more accurate FPS calculation
+            Application.Idle += Application_Idle;
+
+        }
+
+        // Initialize predefined apps
+        private void InitializePredefinedApps()
+        {
+            predefinedApps = new Dictionary<string, string>
+            {
+                { "Notepad", "C:\\Windows\\System32\\notepad.exe" },
+                { "Calculator", "C:\\Windows\\System32\\calc.exe" },
+                { "Paint", "C:\\Windows\\System32\\mspaint.exe" },
+                // Add more apps as needed
+            };
+
+            // Add the app names to a ComboBox or ListBox for the user to select
+            comboBoxAppList.Items.AddRange(predefinedApps.Keys.ToArray());
+        }
+
+        private void InitializeTimers()
+        {
+            // Initialize the fade timer
+            fadeTimer = new Timer { Interval = 40 };  // Adjust to desired fade speed
+            fadeTimer.Tick += FadeTimer_Tick;
+            fadeTimer.Start();
+
+            // Timer for updating CPU and memory usage
+            Timer updateTimer = new Timer { Interval = 500 };  // Update every 500 ms (or adjust as needed)
+            updateTimer.Tick += (sender, e) =>
+            {
+                // Get CPU usage and display it smoothly
+                float cpuUsage = cpuCounter.NextValue();
+                lblCPUUsage.Text = $"CPU Usage: {cpuUsage:F2}%";
+
+                // Get the available memory in MB from the PerformanceCounter
+                float availableMemory = ramCounter.NextValue();
+
+                // Get the total memory in MB
+                float totalMemory = new Microsoft.VisualBasic.Devices.ComputerInfo().TotalPhysicalMemory / 1024 / 1024; // Convert bytes to MB
+
+                // Calculate the available memory percentage
+                float memoryPercentage = (availableMemory / totalMemory) * 100;
+
+                // Display the available memory as a percentage
+                lblMemoryUsage.Text = $"Memory Available: {memoryPercentage:F2}%";
+            };
+            updateTimer.Start();
+
+            // Initialize FPS timer
+            fpsTimer = new Timer { Interval = 16 };  // Interval set to 16ms (for ~60 FPS)
+            fpsTimer.Tick += UpdateFPS;
+            fpsTimer.Start();
+
+            frameCount = 0;
+            lastTime = DateTime.Now;
+        }
+
+        private void Application_Idle(object sender, EventArgs e)
+        {
+            // Calculate FPS based on idle time
+            TimeSpan elapsedTime = DateTime.Now - lastFrameTime;
+            frameCount++;
+
+            if (elapsedTime.TotalSeconds >= 1)
+            {
+                int fps = frameCount;  // Frames per second is the count of frames in 1 second
+                lblFPS.Text = $"FPS: {fps}";  // Update the label with FPS
+                frameCount = 0;  // Reset frame count
+                lastFrameTime = DateTime.Now;  // Reset the last time
+            }
+
+            // Keep the application active
+            Application.DoEvents();
+        }
+
+        private void UpdateFPS(object sender, EventArgs e)
+        {
+            frameCount++;  // Increment frame count on every tick
+
+            // Calculate FPS every second (if at least 1 second has passed)
+            TimeSpan elapsedTime = DateTime.Now - lastTime;
+
+            if (elapsedTime.TotalSeconds >= 1)
+            {
+                int fps = frameCount;  // Frames per second is the count of frames in 1 second
+                lblFPS.Text = $"FPS: {fps}";  // Update the label with FPS
+                frameCount = 0;  // Reset frame count after 1 second
+                lastTime = DateTime.Now;  // Reset the last time
+            }
+        }
+
+        private void Timer_Tick(object sender, EventArgs e)
+        {
+            // Update CPU usage, memory usage, and CPU temperature labels
+            lblCPUUsage.Text = "CPU Usage: " + GetCPUUsage() + "%";
+            lblMemoryUsage.Text = "Memory Usage: " + GetMemoryUsage() + "MB";
+        }
+
+        private float GetCPUUsage()
+        {
+            return cpuCounter.NextValue(); // Get the current CPU usage
+        }
+
+        private float GetMemoryUsage()
+        {
+            // Get the total memory and calculate memory usage (total - available)
+            float totalMemory = new Microsoft.VisualBasic.Devices.ComputerInfo().TotalPhysicalMemory / 1024 / 1024; // Convert to MB
+            float availableMemory = ramCounter.NextValue();
+            return totalMemory - availableMemory; // Memory in use
+        }
+
+
+        private void UpdateCPUUsage()
+        {
+            // Get CPU usage and display it smoothly
+            float cpuUsage = cpuCounter.NextValue();
+            lblCPUUsage.Text = $"CPU Usage: {cpuUsage:F2}%";
+        }
+
+
+        private void UpdateMemoryUsage()
+        {
+            // Get the available memory in MB from the PerformanceCounter
+            float availableMemory = ramCounter.NextValue();
+
+            // Get the total memory in MB
+            float totalMemory = new Microsoft.VisualBasic.Devices.ComputerInfo().TotalPhysicalMemory / 1024 / 1024; // Convert bytes to MB
+
+            // Calculate the available memory percentage
+            float memoryPercentage = (availableMemory / totalMemory) * 100;
+
+            // Display the available memory as a percentage
+            lblMemoryUsage.Text = $"Memory Available: {memoryPercentage:F2}%";
+        }
+
+
+        private void FadeTimer_Tick(object sender, EventArgs e)
+        {
+            if (fadeIn)
+            {
+                if (this.Opacity < 1)
+                    this.Opacity += 0.02; // Increase opacity for fade-in
+                else
+                {
+                    fadeTimer.Stop(); // Stop once fully visible
+                    this.Opacity = 1; // Ensure the opacity is exactly 1
+                }
+            }
+            else
+            {
+                if (this.Opacity > 0)
+                    this.Opacity -= 0.02; // Decrease opacity for fade-out
+                else
+                {
+                    fadeTimer.Stop(); // Stop once fully hidden
+                    this.Opacity = 0; // Ensure opacity is exactly 0
+                }
+            }
+        }
+        private void StartFadeOut()
+        {
+            fadeIn = false;
+            fadeTimer.Start();
+        }
+
+        private void btnSetPriority_Click(object sender, EventArgs e)
+        {
+            // Define the application names for the processes
+            string[] targetProcesses = { "VALORANT", "VALORANT-Win64-Shipping", "RiotClientServices" };
+            string message = "";
+
+            foreach (string processName in targetProcesses)
+            {
+                try
+                {
+                    // Get all processes with the specified name
+                    Process[] processes = Process.GetProcessesByName(processName);
+                    if (processes.Length > 0)
+                    {
+                        foreach (Process process in processes)
+                        {
+                            // Set priority to High
+                            process.PriorityClass = ProcessPriorityClass.High;
+
+                            // Collect process details for display
+                            message += $"Process: {process.ProcessName}\n";
+                            message += $"PID: {process.Id}\n";
+                            message += $"Priority: {process.PriorityClass}\n";
+                            message += $"CPU Time: {process.TotalProcessorTime}\n";
+                            message += $"Memory Usage: {process.WorkingSet64 / 1024 / 1024} MB\n\n";
+                        }
+                    }
+                    else
+                    {
+                        // Process not found, suggest user to run the application
+                        message += $"{processName}.exe is not running. Please start the application.\n";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Handle any exceptions, such as access denied
+                    message += $"Failed to set priority for {processName}: {ex.Message}\n";
+                }
+            }
+
+            // Show the result in a message box
+            MessageBox.Show(message, "Priority Change Status", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        // Paths for cleaning
+        private readonly string tempPath = Path.GetTempPath();                    // %temp%
+        private readonly string systemTempPath = @"C:\Windows\Temp";              // System Temp
+        private readonly string prefetchPath = @"C:\Windows\Prefetch";            // Prefetch
+        private readonly string recentPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            @"Microsoft\Windows\Recent");                                        // Recent Files
+
+        // Importing SHEmptyRecycleBin for Recycle Bin cleaning
+        [DllImport("shell32.dll", SetLastError = true)]
+        private static extern uint SHEmptyRecycleBin(IntPtr hwnd, string pszRootPath, uint dwFlags);
+
+        private const uint SHERB_NOCONFIRMATION = 0x00000001;  // No confirmation dialog
+        private const uint SHERB_NOPROGRESSUI = 0x00000002;    // No progress UI
+        private const uint SHERB_NOSOUND = 0x00000004;         // No sound
+
+        // Method to get folder size
+        private long GetFolderSize(string folderPath)
+        {
+            if (!Directory.Exists(folderPath)) return 0;
+            return Directory.GetFiles(folderPath, "*", SearchOption.AllDirectories)
+                .Select(file => new FileInfo(file))
+                .Sum(fileInfo => fileInfo.Length);
+        }
+
+        // Method to delete files in a folder
+        private void DeleteFiles(string folderPath)
+        {
+            if (!Directory.Exists(folderPath)) return;
+            foreach (string file in Directory.GetFiles(folderPath))
+            {
+                try { File.Delete(file); }
+                catch (Exception ex) { Console.WriteLine($"Error deleting {file}: {ex.Message}"); }
+            }
+        }
+
+        // Method to clear Explorer History
+        private void ClearExplorerHistory()
+        {
+            try
+            {
+                // Clear specific registry keys for Explorer History
+                Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU", false);
+                Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Explorer\TypedPaths", false);
+                Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs", false);
+                MessageBox.Show("Explorer History has been cleared.", "Explorer History", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to clear Explorer History: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void chkAll_CheckedChanged(object sender, EventArgs e)
+        {
+            bool checkState = chkAll.Checked;
+            chkTemp.Checked = checkState;
+            chkPrefetch.Checked = checkState;
+            chkUserTemp.Checked = checkState;
+            chkRecycleBin.Checked = checkState;
+            chkRecent.Checked = checkState;
+            chkHistory.Checked = checkState;
+        }
+
+        private void btnClean_Click(object sender, EventArgs e)
+        {
+            // Dictionary to store cleaned sizes for each option
+            var cleanedSizes = new Dictionary<string, long>();
+            long totalCleanedSize = 0;
+
+            if (chkTemp.Checked)
+            {
+                long tempSize = GetFolderSize(systemTempPath);
+                cleanedSizes["System Temp"] = tempSize;
+                totalCleanedSize += tempSize;
+                DeleteFiles(systemTempPath);
+            }
+
+            if (chkPrefetch.Checked)
+            {
+                long prefetchSize = GetFolderSize(prefetchPath);
+                cleanedSizes["Prefetch"] = prefetchSize;
+                totalCleanedSize += prefetchSize;
+                DeleteFiles(prefetchPath);
+            }
+
+            if (chkUserTemp.Checked)
+            {
+                long userTempSize = GetFolderSize(tempPath);
+                cleanedSizes["User Temp"] = userTempSize;
+                totalCleanedSize += userTempSize;
+                DeleteFiles(tempPath);
+            }
+
+            if (chkRecent.Checked)
+            {
+                long recentSize = GetFolderSize(recentPath);
+                cleanedSizes["Recent Files"] = recentSize;
+                totalCleanedSize += recentSize;
+                DeleteFiles(recentPath);
+            }
+
+            if (chkRecycleBin.Checked)
+            {
+                // Get Recycle Bin size estimation (for demonstration purposes, it's fixed at 0)
+                long recycleBinSize = 0;
+                uint result = SHEmptyRecycleBin(IntPtr.Zero, null, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
+                if (result == 0)
+                {
+                    cleanedSizes["Recycle Bin"] = recycleBinSize;
+                    totalCleanedSize += recycleBinSize;
+                }
+                else
+                {
+                    MessageBox.Show("Failed to empty Recycle Bin.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+
+            if (chkHistory.Checked)
+            {
+                // Estimated size for File Explorer history, fixed at 0 for demonstration
+                long historySize = 0;
+                ClearExplorerHistory();
+                cleanedSizes["Explorer History"] = historySize;
+                totalCleanedSize += historySize;
+            }
+
+            // Format and display the cleaned sizes for each selected option
+            string message = "Cleaning completed! Here are the details:\n\n";
+            foreach (var item in cleanedSizes)
+            {
+                message += $"{item.Key}: {item.Value / (1024.0 * 1024.0):F2} MB\n";
+            }
+            message += $"\nTotal cleaned size: {totalCleanedSize / (1024.0 * 1024.0):F2} MB";
+
+            MessageBox.Show(message, "Clean Completed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void EmptyRecycleBinAlternative()
+        {
+            try
+            {
+                var process = new System.Diagnostics.Process();
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.Arguments = "/c echo Y| PowerShell -Command \"Clear-RecycleBin\"";  // Automatically confirms deletion
+                process.StartInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
+                process.Start();
+                process.WaitForExit();
+
+                MessageBox.Show("Recycle Bin has been emptied successfully.", "Recycle Bin", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to empty Recycle Bin: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            // Log that the application has started
+            Console.WriteLine("Application started.");
+
+            try
+            {
+                // Load the saved app path from the file
+                if (File.Exists("selectedAppPath.txt"))
+                {
+                    string savedAppPath = File.ReadAllText("selectedAppPath.txt");
+
+                    if (!string.IsNullOrEmpty(savedAppPath) && File.Exists(savedAppPath))
+                    {
+                        selectedAppPath = savedAppPath;
+
+                        // Display the selected app's icon in the picture box
+                        Icon appIcon = Icon.ExtractAssociatedIcon(selectedAppPath);
+                        pictureBoxAppIcon.Image = appIcon.ToBitmap();
+                    }
+                    else
+                    {
+                        MessageBox.Show("The saved app path is not valid or the file no longer exists.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error loading the app path: " + ex.Message);
+            }
+        }
+
+        private void btnOpenSecurity_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // Open Windows Security settings
+                Process.Start("ms-settings:windowsdefender");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while trying to open Windows Security Settings: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnDisableVirusProtection_Click_Click(object sender, EventArgs e)
+        {
+            // Open Windows Security
+            Process.Start("ms-settings:windowssecurity");
+
+            // Wait for Windows Security to open
+            System.Threading.Thread.Sleep(2000); // Adjust the sleep time if needed
+
+            // Disable Real-time protection
+            var settingsWindow = new Form(); 
+            settingsWindow.Show(); 
+            settingsWindow.TopMost = true;
+
+            // Use SendKeys to navigate and disable Real-time protection
+            SendKeys.Send("Alt+V"); // Open Virus & threat protection settings
+            SendKeys.Send("Enter"); // Select Real-time protection
+            SendKeys.Send("Enter"); // Turn off Real-time protection
+            SendKeys.Send("Alt+D"); // Go back to the main settings page
+            SendKeys.Send("Enter"); // Close settings window
+        }
+
+        private void btnDisableProtection_Click(object sender, EventArgs e)
+        {
+            // PowerShell script to disable real-time protection
+            string powerShellScript = @"
+# Disable Real-time Protection
+Set-MpPreference -DisableRealtimeMonitoring $true
+
+# Add additional protection settings if necessary
+Set-MpPreference -DisableIOAVProtection $true  # Disables protection for input-output operations
+Set-MpPreference -DisableBehaviorMonitoring $true  # Disables behavior monitoring protection
+";
+
+            try
+            {
+                // Write the PowerShell script to a temporary file
+                string tempScriptPath = Path.Combine(Path.GetTempPath(), "DisableSecurity.ps1");
+                File.WriteAllText(tempScriptPath, powerShellScript);
+
+                // Configure the process to run PowerShell with administrative privileges
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = $"-ExecutionPolicy Bypass -File \"{tempScriptPath}\"",
+                    Verb = "runas", // Run as administrator
+                    UseShellExecute = true,
+                    CreateNoWindow = true
+                };
+
+                // Start the process and wait for it to finish
+                var process = Process.Start(psi);
+                process.WaitForExit();
+
+                // Show a success message
+                MessageBox.Show("Real-time protection and Dev Drive protection are now disabled.",
+                    "Protection Disabled", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                // Optionally delete the script after execution
+                File.Delete(tempScriptPath);
+            }
+            catch (Exception ex)
+            {
+                // Display an error message if the script execution fails
+                MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnRunTreeCDrive_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // Set up the process to run the TREE command for the C: drive
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = "/c TREE C:\\ /F", // Run TREE on C: drive with /F to include files
+                    UseShellExecute = true,       // Use the shell to open the command prompt
+                    CreateNoWindow = false        // Set to false so the command prompt window is visible
+                };
+
+                // Start the process to display TREE output in a command prompt window
+                Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                // Optional: Log or handle errors here if necessary
+                MessageBox.Show($"Error running TREE for C:\\: {ex.Message}");
+            }
+        }
+
+        private void btnOpenTaskManager_Click(object sender, EventArgs e)
+        {
+            // Open the TaskManagerForm
+            TaskManagerForm taskManagerForm = new TaskManagerForm();
+            taskManagerForm.Show();
+        }
+
+        private void chkUserTemp_CheckedChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void btnShowOverlay_Click(object sender, EventArgs e)
+        {
+            OverlayForm overlay = new OverlayForm();
+            overlay.Show();
+        }
+
+        private void chkTemp_CheckedChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void chkHistory_CheckedChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void chkPrefetch_CheckedChanged(object sender, EventArgs e)
+        {
+
+        }
+
+
+        // Event handler for the PictureBox click
+        private void pictureBoxAppIcon_Click(object sender, EventArgs e)
+        {
+            // Optionally, open the FileDialog again if you want to change the app
+            btnChangeApp_Click(sender, e);
+        }
+
+        // Event handler for the "Launch App" button
+        // Launch the selected app
+        private void btnLaunchApp_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string selectedApp = comboBoxAppList.SelectedItem?.ToString();
+                if (string.IsNullOrEmpty(selectedApp))
+                {
+                    MessageBox.Show("Please select an app.");
+                    return;
+                }
+
+                if (predefinedApps.ContainsKey(selectedApp))
+                {
+                    string appPath = predefinedApps[selectedApp];
+
+                    // Launch the selected app
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        FileName = appPath,
+                        Verb = "runas", // Request to run as administrator
+                        UseShellExecute = true
+                    };
+
+                    Process.Start(startInfo);
+                    MessageBox.Show($"Launching {selectedApp}...");
+                }
+                else
+                {
+                    MessageBox.Show("App not found.");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error launching app: " + ex.Message);
+            }
+        }
+
+        private void btnChangeApp_Click(object sender, EventArgs e)
+        {
+            // Open a FileDialog to select a new application
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.Filter = "Executable Files|*.exe";
+                openFileDialog.Title = "Select Application to Launch";
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    // Set the selected app path
+                    selectedAppPath = openFileDialog.FileName;
+
+                    // Optionally, display the app's icon and name in a PictureBox or Label
+                    pictureBoxAppIcon.Image = Icon.ExtractAssociatedIcon(selectedAppPath).ToBitmap();
+                    lblAppName.Text = Path.GetFileNameWithoutExtension(selectedAppPath);
+                }
+            }
+        }
+
+
+        // Helper method to open the file dialog and select an app
+        private void SelectApp()
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                Filter = "Executable Files (*.exe)|*.exe|All Files (*.*)|*.*",
+                Title = "Select an Application to Launch"
+            };
+
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                selectedAppPath = openFileDialog.FileName;
+
+                // Extract the app's icon
+                try
+                {
+                    Icon appIcon = Icon.ExtractAssociatedIcon(selectedAppPath);
+
+                    if (appIcon != null)
+                    {
+                        pictureBoxAppIcon.Image = appIcon.ToBitmap();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Could not extract the icon from the selected application.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to extract icon: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+
+                lblAppPath.Text = $"Selected App: {Path.GetFileName(selectedAppPath)}";
+            }
+            else
+            {
+                MessageBox.Show("No file selected. Please try again.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void btnSelectApp_Click(object sender, EventArgs e)
+        {
+            // Open a file dialog to select the app
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.Filter = "Executable Files (*.exe)|*.exe|All Files (*.*)|*.*";
+
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                selectedAppPath = openFileDialog.FileName;
+
+                // Display the selected app's icon in the picture box
+                try
+                {
+                    Icon appIcon = Icon.ExtractAssociatedIcon(selectedAppPath);
+                    pictureBoxAppIcon.Image = appIcon.ToBitmap();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error displaying app icon: " + ex.Message);
+                }
+
+                // Save the selected app path to a file
+                SaveAppPath(selectedAppPath);
+            }
+        }
+
+        private void SaveAppPath(string appPath)
+        {
+            try
+            {
+                // Save the selected app path to a text file
+                File.WriteAllText("selectedAppPath.txt", appPath);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error saving the app path: " + ex.Message);
+            }
+        }
+
+        private void btnAddApp_Click(object sender, EventArgs e)
+        {
+            // Open file dialog to select an executable file
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                Filter = "Executable Files|*.exe",
+                Title = "Select an Application"
+            };
+
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                string appPath = openFileDialog.FileName;
+                string appName = System.IO.Path.GetFileNameWithoutExtension(appPath);
+
+                // Add the app to the dictionary
+                predefinedApps[appName] = appPath;
+
+                // Add the app name to ComboBox/ListBox
+                comboBoxAppList.Items.Add(appName);
+            }
+        }
+    }
+}
